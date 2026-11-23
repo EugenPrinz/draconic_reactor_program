@@ -159,14 +159,15 @@ local STAT = { inRF = 0, outRF = 0, shardsOut = 0, fuelIn = 0, maxTemp = 0, minF
 
 local function worldTick()
   SIM.tick = SIM.tick + 1
-  coreTick()
-  -- источник → входной гейт → инжектор
+  -- источник → входной гейт → инжектор. Порядок как в игре по наблюдению: OC читает поле
+  -- уже после расхода этого тика (равновесие 1 − расход/вход, а не «почти 100%»).
   GIN.moved = 0
   local offer = math.min(SRC.rate, INT_MAX)
   local pass = math.min(math.max(0, gateFlow(GIN) - GIN.moved), INT_MAX)   -- target.receiveEnergy(sim)=MAX
   local inj = injectEnergy(math.min(offer, pass))
   GIN.moved = GIN.moved + inj
   STAT.inRF = inj
+  coreTick()
   -- стабилизатор → выходной гейт → мусорка
   GOUT.moved = 0
   if R.state == "ONLINE" and not R.boom then
@@ -199,7 +200,9 @@ local function worldTick()
   if R.temp > STAT.maxTemp then STAT.maxTemp = R.temp end
   local cp = (R.conv + R.fuel) > 0 and R.conv / (R.conv + R.fuel) * 100 or 0
   if R.maxField > 0 and R.state ~= "OFFLINE" then
-    local fp = R.field / R.maxField * 100
+    local fp = math.min(100, (R.field + R.drain) / R.maxField * 100)   -- до расхода тика, как в drc.lua
+    local raw = R.field / R.maxField * 100
+    if R.state == "ONLINE" and raw < (STAT.minRawOnline or 100) then STAT.minRawOnline = raw end
     if fp < STAT.minField then STAT.minField = fp end
     if R.state == "ONLINE" and fp < STAT.minFieldOnline then STAT.minFieldOnline = fp end
   end
@@ -354,6 +357,7 @@ package.loaded.computer = computer
 package.loaded.event = event
 package.loaded.serialization = serialization
 package.loaded.unicode = unicodeLib
+package.loaded.filesystem = { lastModified = function() return os.time() * 1000 end }
 
 -- ======================= запуск программы =======================
 local TMP = os.tmpname()
@@ -434,6 +438,7 @@ local function summary()
   print(string.format("  итог: %s, T=%.0f °C (макс %.0f), поле мин %.2f%% (в работе %.2f%%), конверсия макс %.2f%%",
     R.boom and ("ВЗРЫВ на " .. string.format("%.1f с", R.boomTick / 20)) or R.state, R.temp, STAT.maxTemp,
     STAT.minField, STAT.minFieldOnline, STAT.maxConv))
+  print(string.format("  поле, как в GUI (после расхода тика): мин в работе %.2f%%", STAT.minRawOnline or 100))
   print(string.format("  осколков вынуто: %d за %.0f с, топлива подано: %d", STAT.shardsOut, SIM.tick / 20, STAT.fuelIn))
   print("  статусы: " .. table.concat(STAT.timeline, " | "))
   local fail = 0
@@ -462,7 +467,8 @@ function SC.basic()
   check(GIN.castErr == 0 and GOUT.castErr == 0, "нет ClassCastException (числа передаются дробными)")
   check(perMin > 10, "больше 10 осколков/мин (вики: ~12)")
   check(STAT.maxTemp > 13000 and STAT.maxTemp < 16000, "равновесная температура 13–16 тыс °C")
-  check(STAT.minFieldOnline > 99, "поле в работе > 99%")
+  check(STAT.minFieldOnline > 99, "поле до расхода в работе > 99%")
+  check((STAT.minRawOnline or 100) < 90, "поле в GUI (после расхода) < 90% — как в игре, и это не авария")
   check(not hasLog("АВАРИЙНЫЙ"), "без аварий")
 end
 

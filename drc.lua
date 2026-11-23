@@ -24,10 +24,13 @@
 --   * стабилизаторы отдают RF только в статусе online;
 --   * в stopping реактор остывает, только когда насыщение >= 99%
 --     и есть несконвертированное топливо; гаснет при T <= 2001 °C;
---   * maxField / maxSaturation фиксируются в начале зарядки по топливу.
+--   * maxField / maxSaturation фиксируются в начале зарядки по топливу;
+--   * OC читает поле уже после расхода тика: при бесконечном входе видно
+--     100% − fieldDrainRate/maxField (~88% на 14 000 °C). Защита смотрит на
+--     поле до расхода: (fieldStrength + fieldDrainRate) / maxFieldStrength.
 -- =====================================================================
 
-local VERSION = "0.1.0"
+local VERSION = "0.1.1"
 
 local component = require("component")
 local computer  = require("computer")
@@ -214,6 +217,27 @@ local S = {
   startedAt = 0, onlineSince = nil,
 }
 
+-- Реальное время: os.date в OC показывает игровые часы (1 с = 72 игровых).
+-- Берём время изменения файла в /tmp (реальные часы хоста) и дальше считаем по uptime.
+local CLOCK_BASE
+local function initClock()
+  local ok, fs = pcall(require, "filesystem")
+  if not ok or not fs or not fs.lastModified then return end
+  local p = "/tmp/.drc-clock"
+  local f = io.open(p, "w")
+  if not f then return end
+  f:write("t"); f:close()
+  local ok2, t = pcall(fs.lastModified, p)
+  if not ok2 or type(t) ~= "number" or t <= 0 then return end
+  if t > 1e11 then t = t / 1000 end          -- мс → с
+  CLOCK_BASE = t - computer.uptime()
+end
+local function clock(fmt)
+  if CLOCK_BASE then return os.date(fmt or "%H:%M:%S", math.floor(CLOCK_BASE + computer.uptime())) end
+  local s = math.floor(computer.uptime() - (S.startedAt or 0))
+  return string.format("+%d:%02d:%02d", s // 3600, (s % 3600) // 60, s % 60)
+end
+
 local LOG = {}
 local function logFile(line)
   local f = io.open(LOG_PATH, "a")
@@ -222,11 +246,11 @@ end
 
 local function log(msg, kind)
   kind = kind or "info"
-  local e = { t = os.date("%H:%M:%S"), m = msg, k = kind }
+  local e = { t = clock(), m = msg, k = kind }
   table.insert(LOG, 1, e)
   while #LOG > 60 do table.remove(LOG) end
   S.dirty = true
-  if kind ~= "info" then logFile(os.date("%Y-%m-%d %H:%M:%S") .. " [" .. kind .. "] " .. msg) end
+  if kind ~= "info" then logFile(clock("%Y-%m-%d %H:%M:%S") .. " [" .. kind .. "] " .. msg) end
   if DRC_ON_LOG then DRC_ON_LOG(msg, kind) end   -- luacheck: ignore (хук для тестов)
 end
 
@@ -287,7 +311,19 @@ end
 local function pct(a, b) if not a or not b or b <= 0 then return 0 end return a / b * 100 end
 
 local function derive(d)
-  d.fieldP = pct(d.fieldStrength, d.maxFieldStrength)
+  d.fieldRaw = pct(d.fieldStrength, d.maxFieldStrength)            -- как в GUI: после расхода тика
+  d.fieldP = math.min(100, pct((d.fieldStrength or 0) + (d.fieldDrainRate or 0), d.maxFieldStrength))   -- до расхода
+  local c = (d.maxFuelConversion or 0) > 0 and d.fuelConversion / d.maxFuelConversion * 1.3 - 0.3 or 0
+  d.chaos = c
+  -- оценка остановки: насыщение до 99% (экспонента), потом остывание на (1 − c) °C за тик
+  local s = (d.maxEnergySaturation or 0) > 0 and d.energySaturation / d.maxEnergySaturation or 0
+  local maxRFt = (s < 1 and (d.generationRate or 0) > 0) and d.generationRate / (1 - s) or 0
+  if maxRFt > 0 and s < 0.99 then
+    d.etaSat = math.log((1 - s) / 0.01) / (maxRFt / d.maxEnergySaturation) / 20
+  else
+    d.etaSat = 0
+  end
+  d.etaCool = math.max(0, ((d.temperature or 0) - 2001) / math.max(0.05, 1 - c)) / 20
   d.satP   = pct(d.energySaturation, d.maxEnergySaturation)
   d.convP  = pct(d.fuelConversion, d.maxFuelConversion)
   d.total  = d.maxFuelConversion or 0
@@ -647,8 +683,10 @@ local function statusText()
   if st == "charged" then return (CFG.auto or S.startReq) and "Заряжен, запускаю" or "Заряжен — «ЗАПУСК»", C.ok end
   if st == "online" then return "Работает: максимальная скорость", C.ok end
   if st == "stopping" then
-    if d and d.satP < 99 then return ("Остановка: набор насыщения %.1f%% / 99%%"):format(d.satP), C.warn end
-    return "Остановка: остывание до 2000 °C", C.warn
+    if d and d.satP < 99 then
+      return ("Остановка: насыщение %.1f%% → 99%% через ~%s, затем остывание (это механика мода)"):format(d.satP, fmtTime(d.etaSat)), C.warn
+    end
+    return ("Остановка: остывание до 2000 °C, ~%s"):format(fmtTime(d and d.etaCool or 0)), C.warn
   end
   return st, C.text
 end
@@ -706,7 +744,7 @@ local function drawHeader()
     or (S.status == "none" or S.status == "invalid") and C.red or C.info
   local chip = " " .. st .. " "
   put(math.floor((W - ulen(chip)) / 2), 1, chip, 0x000000, col)
-  local r = os.date("%H:%M:%S")
+  local r = clock()
   put(W - ulen(r), 1, r, C.dim, 0x1A2030)
 end
 
@@ -724,7 +762,7 @@ local function drawLeft()
     { CFG.tempWarn, C.warn, nil }, { CFG.tempStop, C.red, "стоп " .. fmtInt(CFG.tempStop) },
   })
   y = y + 4
-  gauge(LX, y, LW, "Поле", string.format("%.2f%%  %s / %s", d.fieldP or 0, fmtBig(d.fieldStrength), fmtBig(d.maxFieldStrength)),
+  gauge(LX, y, LW, "Поле", string.format("%.2f%%  (в GUI %.1f%% — после расхода тика)  макс %s", d.fieldP or 0, d.fieldRaw or 0, fmtBig(d.maxFieldStrength)),
     d.fieldP or 0, 100, fieldCol(d.fieldP or 0), {
       { CFG.fieldStop, C.red, "стоп " .. CFG.fieldStop .. "%" }, { CFG.fieldWarn, C.warn, CFG.fieldWarn .. "%" },
     })
@@ -827,7 +865,7 @@ end
 local SETTINGS = {
   { "minStartFuel", "Топливо перед зарядкой", "%", "maxField и maxSaturation считаются по топливу в момент зарядки" },
   { "fieldWarn", "Поле: предупреждение", "%", "" },
-  { "fieldStop", "Поле: аварийный стоп", "%", "Спасает при просадке входа до ~9 млн RF/t, не при полном отказе" },
+  { "fieldStop", "Поле: аварийный стоп", "%", "Поле до расхода тика (в GUI на ~12% ниже). Не спасает при полном отказе входа" },
   { "convWarn", "Конверсия: предупреждение", "%", "Норма — до ~5% (1 осколок внутри)" },
   { "convStop", "Конверсия: аварийный стоп", "%", "Во время остановки конверсия ещё растёт — нужен запас" },
   { "tempWarn", "Температура: предупреждение", "°C", "" },
@@ -921,7 +959,9 @@ local function main()
   RW = 48; RX = W - RW; LX = 2; LW = RX - LX - 1
 
   S.startedAt = computer.uptime()
+  initClock()
   log("DRC " .. VERSION .. " запущен", "ok")
+  if not CLOCK_BASE then log("Реальные часы недоступны: время в журнале — от запуска программы", "info") end
   log("Железо: " .. HW_SOURCE, HW_SOURCE == HW_PATH and "info" or "warn")
   if not gIn or not gOut then
     log("Гейт" .. ((not gIn and not gOut) and "ы не заданы" or (not gIn and " входа не задан" or " выхода не задан")) ..
