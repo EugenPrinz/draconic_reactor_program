@@ -117,4 +117,4 @@ DRC_DUMP=/tmp/s.txt lua5.3 tests/sim.lua basic && python3 tests/render.py /tmp/s
 ## 3D-схема постройки
 
 Интерактивная схема (three.js, текстуры из Draconic Evolution и OpenComputers): пошаговая сборка,
-проверка расстояний и ориентации гейтов, живая модель ядра — `docs/build.html`.
+проверка расстояний и ориентации гейтов, живая модель реактора со сбоями — `docs/build.html` (открыть в браузере, нужен интернет для three.js). Сборка — `tools/build3d/`.

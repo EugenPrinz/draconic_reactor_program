@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Draconic Reactor — постройка</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* VOICE  технический стенд: схема постройки + живая модель реактора, как экран в игре ночью
+   IDEA   площадка в Minecraft, снятая сверху, рядом пульт DRC: шаги, проверки, физика
+   PICTURE сама 3D-сцена с моделями из мода, ядро растёт и светится по температуре
+   COLOUR ночная сцена #0a0d14, драконий оранжевый #ff7a2f, хаос фиолетовый #9b5cff, поле голубое #57b6ff
+   TYPE   Chakra Petch (заголовки, цифры) + Inter (текст)
+   LAYOUT ноутбук: сцена слева на всю высоту, пульт 380px справа; телефон: сцена 56% высоты, пульт ниже */
+:root{color-scheme:dark;--bg:#0a0d14;--panel:#111622;--panel2:#161c2b;--line:#263049;--ink:#e6eaf2;--dim:#8d97ab;--acc:#ff7a2f;--chaos:#9b5cff;--field:#57b6ff;--ok:#43d17a;--warn:#ffc24a;--bad:#ff4f4f}
+*{box-sizing:border-box;min-width:0}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 Inter,system-ui,sans-serif;overflow:hidden}
+.app{display:grid;grid-template-columns:minmax(0,1fr) 380px;height:100%}
+.stage{position:relative;overflow:hidden}
+.stage canvas{display:block;width:100%;height:100%}
+.labels{position:absolute;inset:0;pointer-events:none}
+.lbl{position:absolute;transform:translate(-50%,-130%);white-space:nowrap;font:600 12px/1.2 Inter,sans-serif;padding:3px 7px;border-radius:4px;background:rgba(10,13,20,.82);border:1px solid var(--line);color:var(--ink)}
+.lbl.cur{border-color:var(--acc);color:#fff;font-size:13px}
+.hud{position:absolute;left:16px;top:14px;right:16px;display:flex;gap:12px;align-items:flex-start;pointer-events:none}
+.hud h1{margin:0;font:700 26px/1.05 "Chakra Petch",sans-serif;letter-spacing:-.01em}
+.hud .sub{color:var(--dim);font-size:13px;margin-top:4px}
+.boom{position:absolute;inset:0;display:none;place-items:center;background:radial-gradient(circle,rgba(255,230,200,.85),rgba(255,90,20,.55) 40%,rgba(10,13,20,.9) 75%);text-align:center}
+.boom.on{display:grid}
+.boom b{display:block;font:700 44px/1 "Chakra Petch",sans-serif;color:#fff}
+.boom p{margin:10px 0 16px;color:#fff}
+.side{background:var(--panel);border-left:1px solid var(--line);overflow-y:auto;padding:14px 16px 28px}
+.sec{margin-bottom:18px}
+.sec h2{font:600 16px/1.2 "Chakra Petch",sans-serif;margin:0 0 8px;color:var(--acc)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+button{font:600 14px Inter,sans-serif;color:var(--ink);background:var(--panel2);border:1px solid var(--line);border-radius:6px;min-height:40px;padding:0 12px;cursor:pointer}
+button:hover{border-color:#3d4a6a}
+button:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+button.on{background:#2a1a10;border-color:var(--acc);color:#ffd2b5}
+button.go{background:#163a25;border-color:#2b6b45}
+button.stop{background:#3a1616;border-color:#7a2b2b}
+.steps{list-style:none;margin:0 0 10px;padding:0;display:grid;gap:2px}
+.steps li{display:grid;grid-template-columns:26px minmax(0,1fr);gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;color:var(--dim)}
+.steps li b{font:600 13px "Chakra Petch",sans-serif;color:var(--dim);text-align:right}
+.steps li.done{color:var(--ink)}
+.steps li.cur{background:var(--panel2);color:#fff;outline:1px solid var(--acc)}
+.steps li.cur b{color:var(--acc)}
+.note{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:14px}
+.note p{margin:0 0 6px}.note p:last-child{margin:0}
+.slider{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center}
+input[type=range]{width:100%;accent-color:var(--acc);height:28px}
+.big{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.cell{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.cell span{display:block;color:var(--dim);font-size:12px}
+.cell strong{font:600 20px/1.2 "Chakra Petch",sans-serif;white-space:nowrap}
+.bar{height:6px;background:#0c1019;border-radius:3px;margin-top:6px;overflow:hidden}
+.bar i{display:block;height:100%;width:0}
+.chip{display:inline-block;font:600 13px "Chakra Petch",sans-serif;padding:3px 10px;border-radius:4px;background:#26314a}
+.checks{list-style:none;margin:0;padding:0;display:grid;gap:4px;font-size:13.5px}
+.checks li{display:grid;grid-template-columns:18px minmax(0,1fr);gap:6px}
+.checks .y{color:var(--ok)}.checks .n{color:var(--bad)}
+.log{font-size:12.5px;color:var(--dim);max-height:120px;overflow-y:auto;margin-top:8px}
+.small{font-size:12.5px;color:var(--dim)}
+kbd{font:12px Inter;background:#1d2536;border:1px solid var(--line);border-radius:3px;padding:0 4px}
+@media(max-width:820px){
+  body{overflow:auto}
+  .app{grid-template-columns:minmax(0,1fr);height:auto}
+  .stage{height:56svh}
+  .side{border-left:0;border-top:1px solid var(--line)}
+  .hud h1{font-size:20px}
+}
+@media(prefers-reduced-motion:reduce){.lbl{transition:none}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="stage" id="stage">
+    <div class="labels" id="labels"></div>
+    <div class="hud"><div><h1>Draconic Reactor</h1><div class="sub">Схема постройки и модель работы · GTNH · DRC 0.1.0</div></div></div>
+    <div class="boom" id="boom"><div><b>ВЗРЫВ</b><p id="boomText">Поле упало до нуля. По вики — воронка радиусом ~200 блоков.</p><button id="boomReset">Собрать заново</button></div></div>
+  </div>
+  <aside class="side">
+    <div class="sec">
+      <h2>Постройка</h2>
+      <ol class="steps" id="steps"></ol>
+      <div class="note" id="stepNote"></div>
+      <div class="row" style="margin-top:10px"><button id="prev">← Назад</button><button id="next">Дальше →</button><button id="all">Всё сразу</button><button id="tags">Подписи: шаг</button></div>
+    </div>
+    <div class="sec">
+      <h2>Расстояние до ядра</h2>
+      <div class="slider"><span class="small">2</span><input type="range" id="dist" min="2" max="10" step="1" value="5" aria-label="Расстояние стабилизаторов и инжектора"><span class="small">10</span></div>
+      <div class="small" id="distNote"></div>
+    </div>
+    <div class="sec">
+      <h2>Модель работы</h2>
+      <div class="row" style="margin-bottom:8px"><span class="chip" id="chip">ВЫКЛЮЧЕН</span><span class="small" id="stText"></span></div>
+      <div class="big">
+        <div class="cell"><span>Температура</span><strong id="vT">20 °C</strong><div class="bar"><i id="bT"></i></div></div>
+        <div class="cell"><span>Поле</span><strong id="vF">0%</strong><div class="bar"><i id="bF" style="background:var(--field)"></i></div></div>
+        <div class="cell"><span>Насыщение</span><strong id="vS">0%</strong><div class="bar"><i id="bS" style="background:#3fa8ff"></i></div></div>
+        <div class="cell"><span>Конверсия</span><strong id="vC">0%</strong><div class="bar"><i id="bC" style="background:var(--chaos)"></i></div></div>
+        <div class="cell"><span>Осколков/мин</span><strong id="vR">0</strong></div>
+        <div class="cell"><span>Вынуто осколков</span><strong id="vN">0</strong></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="go" id="bStart">Запуск</button><button class="stop" id="bStop">Стоп</button><button id="bReset">Сброс аварии</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <span class="small">Скорость</span><button data-sp="1">×1</button><button data-sp="10" class="on">×10</button><button data-sp="60">×60</button><button data-sp="300">×300</button>
+      </div>
+      <div class="small" style="margin:10px 0 4px">Сбои — включи и смотри, что сделает DRC:</div>
+      <div class="row">
+        <button id="fFuel" class="on">Подача топлива</button><button id="fShard" class="on">Вывод осколков</button><button id="fTrash" class="on">Мусорка</button>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <span class="small">Источник</span><button data-src="1e30" class="on">∞</button><button data-src="12e6">12 млн</button><button data-src="7e6">7 млн</button><button data-src="0">0</button>
+      </div>
+      <div class="log" id="log"></div>
+    </div>
+    <div class="sec">
+      <h2>Проверка схемы</h2>
+      <ul class="checks" id="checks"></ul>
+    </div>
+    <p class="small">Модели стабилизатора и инжектора собраны из боксов <kbd>ModelReactorStabilizerCore/Ring</kbd>, <kbd>ModelReactorEnergyInjector</kbd>; ядро — икосфера как в <kbd>reactorCoreModel.obj</kbd>; текстуры из GTNewHorizons/Draconic-Evolution и OpenComputers. Физика — порт <kbd>TileReactorCore.runTick</kbd> с конфигом GTNH. Мышь: вращение, колесо — масштаб, правая кнопка — сдвиг.</p>
+  </aside>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+{
+const MODELS = __MODELS__;
+const TEX = __TEX__;
+const SCREEN_IMG = "__SCREEN__";
+const $ = id => document.getElementById(id);
+
+// ---------------- three ----------------
+const stage = $('stage');
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio||1));
+stage.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0d14);
+scene.fog = new THREE.Fog(0x0a0d14, 40, 90);
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 300);
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+scene.add(new THREE.HemisphereLight(0xbcd0ff, 0x30241c, 0.75));
+const sun = new THREE.DirectionalLight(0xffffff, 0.7); sun.position.set(12, 20, 8); scene.add(sun);
+const coreLight = new THREE.PointLight(0xff8a3d, 0, 30); scene.add(coreLight);
+
+const loader = new THREE.TextureLoader();
+const texCache = {};
+function tex(n){
+  if (!texCache[n]) { const t = loader.load(TEX[n]); t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; texCache[n] = t; }
+  return texCache[n];
+}
+const matCache = {};
+function lit(n, color){ const k = 'l'+n+(color||''); return matCache[k] || (matCache[k] = new THREE.MeshLambertMaterial({map:tex(n), side:THREE.DoubleSide, transparent:true, alphaTest:.1, color:color||0xffffff})); }
+function glow(n){ const k = 'g'+n; return matCache[k] || (matCache[k] = new THREE.MeshBasicMaterial({map:tex(n), side:THREE.DoubleSide, transparent:true, alphaTest:.1, color:0xffffff})); }
+
+// ---------- ModelRenderer / ModelBox из Minecraft 1.7.10 ----------
+function boxGeo(b, uv, tw, th, mirror){
+  let [x,y,z,dx,dy,dz,inf] = b;
+  let x2 = x+dx+inf, y2 = y+dy+inf, z2 = z+dz+inf; x -= inf; y -= inf; z -= inf;
+  if (mirror) [x, x2] = [x2, x];
+  const v7=[x,y,z], v0=[x2,y,z], v1=[x2,y2,z], v2=[x,y2,z], v3=[x,y,z2], v4=[x2,y,z2], v5=[x2,y2,z2], v6=[x,y2,z2];
+  const [u,v] = uv;
+  const Q = [
+    [[v4,v0,v1,v5], u+dz+dx, v+dz, u+dz+dx+dz, v+dz+dy],
+    [[v7,v3,v6,v2], u, v+dz, u+dz, v+dz+dy],
+    [[v4,v3,v7,v0], u+dz, v, u+dz+dx, v+dz],
+    [[v1,v2,v6,v5], u+dz+dx, v+dz, u+dz+dx+dx, v],
+    [[v0,v7,v2,v1], u+dz, v+dz, u+dz+dx, v+dz+dy],
+    [[v3,v4,v5,v6], u+dz+dx+dz, v+dz, u+dz+dx+dz+dx, v+dz+dy]];
+  const pos = [], uvs = [];
+  for (const [vs,u1,v1_,u2,v2_] of Q) {
+    const tuv = [[u2,v1_],[u1,v1_],[u1,v2_],[u2,v2_]];
+    const ord = mirror ? [3,2,1,0] : [0,1,2,3];
+    const P = ord.map(i => vs[i]), T = ord.map(i => tuv[i]);
+    for (const i of [0,1,2,0,2,3]) { pos.push(...P[i]); uvs.push(T[i][0]/tw, 1 - T[i][1]/th); }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  g.computeVertexNormals();
+  return g;
+}
+function part(M, name, mat, noPos){
+  const p = M.parts[name], g = new THREE.Group();
+  if (!noPos) g.position.set(...p.rp);
+  g.rotation.set(p.rot[0], p.rot[1], p.rot[2], 'ZYX');
+  for (const b of p.boxes) g.add(new THREE.Mesh(boxGeo(b, p.uv, M.tw, M.th, p.mirror), mat));
+  for (const c of p.children) g.add(part(M, c, mat));
+  return g;
+}
+const AX = {down:[0,-1,0], up:[0,1,0], north:[0,0,-1], south:[0,0,1], west:[-1,0,0], east:[1,0,0]};
+function facingQuat(kind, f){
+  const q = new THREE.Quaternion();
+  let angle = 90, axis = f;
+  if (kind === 'stab') {
+    if (f === 'north') return q;
+    axis = {down:'west', south:'east', up:'east', west:'up', east:'down'}[f];
+    if (f === 'south') angle = 180;
+  } else {
+    if (f === 'down') return q;
+    axis = {up:'west', south:'west', north:'east', west:'north', east:'south'}[f];
+    if (f === 'up') angle = 180;
+  }
+  return q.setFromAxisAngle(new THREE.Vector3(...AX[axis]), angle*Math.PI/180);
+}
+function makeStabilizer(f){
+  const root = new THREE.Group(); root.quaternion.copy(facingQuat('stab', f));
+  const M = MODELS.ModelReactorStabilizerCore, t = 'reactorStabilizerCore';
+  const core = new THREE.Group(); core.scale.setScalar(1/16); root.add(core);
+  core.add(part(M, 'basePlate', lit(t)));
+  const gA = new THREE.Group(), gB = new THREE.Group(); core.add(gA, gB);
+  gA.add(part(M, 'hub1', lit(t)), part(M, 'rotor1R', glow(t)));
+  gB.add(part(M, 'hub2', lit(t)), part(M, 'rotor2R', glow(t)));
+  const R = MODELS.ModelReactorStabilizerRing, tr = 'reactorStabilizerRing';
+  const r1 = new THREE.Group(); r1.rotation.x = Math.PI/2;
+  const r2 = new THREE.Group(); r2.position.y = -0.58; r2.scale.setScalar(.95);
+  const r3 = new THREE.Group(); const r4 = new THREE.Group(); r4.scale.setScalar(1/16);
+  root.add(r1); r1.add(r2); r2.add(r3); r3.add(r4);
+  for (let i = 1; i <= 12; i++) r4.add(part(R, 'ringElement'+i, lit(tr)));
+  const e = -70*Math.PI/180;
+  const EAX = {emitter1:[0,0,1], emitter2:[0,0,-1], emitter3:[1,0,0], emitter4:[-1,0,0]};
+  for (const n of ['hing1','hing2','hing3','hing4','emitter1','emitter2','emitter3','emitter4']) {
+    const w = new THREE.Group(); w.position.set(...R.parts[n].rp); w.scale.setScalar(.5);
+    if (EAX[n]) w.quaternion.setFromAxisAngle(new THREE.Vector3(...EAX[n]), e);
+    w.add(part(R, n, n.startsWith('emitter') ? glow(tr) : lit(tr), true));
+    r4.add(w);
+  }
+  root.userData.anim = {gA, gB, r3};
+  return root;
+}
+function makeInjector(f){
+  const root = new THREE.Group(); root.quaternion.copy(facingQuat('inj', f));
+  const M = MODELS.ModelReactorEnergyInjector, t = 'ModelReactorPowerInjector';
+  const g = new THREE.Group(); g.scale.setScalar(1/16); root.add(g);
+  g.add(part(M, 'support1', lit(t)), part(M, 'BasePlate', lit(t)), part(M, 'element1', glow(t)));
+  return root;
+}
+// икосфера 3 уровня (642 вершины, 1280 граней), у каждой грани UV (0,0)(1,0)(1,1) — как reactorCoreModel.obj
+function icosphere(){
+  const t = (1+Math.sqrt(5))/2;
+  let V = [[-1,t,0],[1,t,0],[-1,-t,0],[1,-t,0],[0,-1,t],[0,1,t],[0,-1,-t],[0,1,-t],[t,0,-1],[t,0,1],[-t,0,-1],[-t,0,1]].map(v => { const l = Math.hypot(...v); return v.map(c => c/l); });
+  let F = [[0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],[1,5,9],[5,11,4],[11,10,2],[10,7,6],[7,1,8],[3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],[4,9,5],[2,4,11],[6,2,10],[8,6,7],[9,8,1]];
+  for (let s = 0; s < 3; s++) {
+    const cache = {}, NF = [];
+    const mid = (a, b) => { const k = a < b ? a+'_'+b : b+'_'+a; if (cache[k] !== undefined) return cache[k];
+      const m = V[a].map((c, i) => (c + V[b][i])/2), l = Math.hypot(...m); V.push(m.map(c => c/l)); return cache[k] = V.length-1; };
+    for (const [a,b,c] of F) { const ab = mid(a,b), bc = mid(b,c), ca = mid(c,a); NF.push([a,ab,ca],[b,bc,ab],[c,ca,bc],[ab,bc,ca]); }
+    F = NF;
+  }
+  const pos = [], uv = [];
+  for (const f of F) { f.forEach((i, k) => { pos.push(...V[i]); uv.push(...[[0,0],[1,0],[1,1]][k]); }); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.computeVertexNormals();
+  return g;
+}
+const ICO = icosphere();
+
+// ---------- блоки ----------
+const BOX = new THREE.BoxGeometry(1, 1, 1);
+const SIDES = ['down','up','north','south','west','east'];
+const FACE_ORDER = ['east','west','up','down','south','north'];      // порядок материалов BoxGeometry
+function cube(mats){ return new THREE.Mesh(BOX, FACE_ORDER.map(f => mats[f])); }
+// FlowGate.getIcon: сторона выхода — machine_io_o, противоположная — machine_io_i, остальные — fluxGate{t}
+function gateIcon(side, f){
+  if (side === f) return 'machine_io_o';
+  if ((side ^ 1) === f) return 'machine_io_i';
+  let t = 0;
+  if (f === 0) t = 1; else if (f === 1) t = 3;
+  else if (f === 2) t = side === 0 ? 3 : side === 1 ? 3 : side === 4 ? 2 : 0;
+  else if (f === 3) t = side === 0 ? 1 : side === 1 ? 1 : side === 4 ? 0 : 2;
+  else if (f === 4) t = side === 0 ? 2 : side === 1 ? 2 : side === 2 ? 0 : 2;
+  else if (f === 5) t = side === 0 ? 0 : side === 1 ? 0 : side === 2 ? 2 : 0;
+  return 'fluxGate' + t;
+}
+function makeGate(out){ const f = SIDES.indexOf(out), m = {}; SIDES.forEach((s, i) => m[s] = lit(gateIcon(i, f))); return cube(m); }
+const T3 = 0x7fffff;   // OC: цвет тира 3 (Cyan)
+function canvasTex(draw){ const c = document.createElement('canvas'); c.width = c.height = 64; draw(c.getContext('2d')); const t = new THREE.CanvasTexture(c); t.magFilter = THREE.NearestFilter; return t; }
+const srcTex = canvasTex(g => { g.fillStyle = '#3a1f5c'; g.fillRect(0,0,64,64); g.strokeStyle = '#c9a2ff'; g.lineWidth = 4; g.strokeRect(4,4,56,56);
+  g.fillStyle = '#ffe3ff'; g.font = 'bold 40px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('∞', 32, 34); });
+const trashTex = canvasTex(g => { g.fillStyle = '#3c4049'; g.fillRect(0,0,64,64); g.fillStyle = '#23262c'; for (let i = 0; i < 5; i++) g.fillRect(10+i*10, 14, 5, 40);
+  g.strokeStyle = '#9aa1ad'; g.lineWidth = 4; g.strokeRect(4,4,56,56); g.fillStyle = '#ff5a2a'; g.fillRect(4,4,56,7); });
+function plainMat(t){ return new THREE.MeshLambertMaterial({map:t}); }
+function makeBlock(k, b){
+  switch (k) {
+    case 'adapter': return cube({down:lit('AdapterTop'), up:lit('AdapterTop'), north:lit('AdapterSide'), south:lit('AdapterSide'), west:lit('AdapterSide'), east:lit('AdapterSide')});
+    case 'gate': return makeGate(b.out);
+    case 'source': { const m = plainMat(srcTex); return cube({down:m, up:m, north:m, south:m, west:m, east:m}); }
+    case 'trash': { const m = plainMat(trashTex); return cube({down:m, up:m, north:m, south:m, west:m, east:m}); }
+    case 'case': return cube({down:lit('CaseTop',T3), up:lit('CaseTop',T3), north:lit('CaseSide',T3), south:lit('CaseSide',T3), west:lit('CaseFrontOn',T3), east:lit('CaseBack',T3)});
+    case 'pc': { const s = lit('PowerConverterSide'), t = lit('GenericTop'); return cube({down:t, up:t, north:s, south:s, west:s, east:s}); }
+    case 'keyboard': { const g = new THREE.Group(); const m = new THREE.Mesh(new THREE.BoxGeometry(.9, .14, .55), [lit('GenericTop'), lit('GenericTop'), lit('Keyboard'), lit('GenericTop'), lit('GenericTop'), lit('GenericTop')]);
+      m.position.set(.05, -.43, 0); m.rotation.y = Math.PI/2; m.rotation.z = 0; g.add(m); return g; }
+    case 'screen': { const s = lit('GenericTop', T3); const fr = lit('screen_' + b.tile, T3), bk = lit('screen_b' + b.tile.slice(1), T3);
+      return cube({down:s, up:s, north:s, south:s, west:fr, east:bk}); }
+    case 'marker': { const m = new THREE.Mesh(BOX, new THREE.MeshBasicMaterial({color:b.color, transparent:true, opacity:.28, depthWrite:false}));
+      m.add(new THREE.LineSegments(new THREE.EdgesGeometry(BOX), new THREE.LineBasicMaterial({color:b.color}))); return m; }
+  }
+}
+const cableMat = lit('CablePart');
+function makeCable(b, at){
+  const g = new THREE.Group();
+  const n = new THREE.Mesh(new THREE.BoxGeometry(.34, .34, .34), cableMat); g.add(n);
+  for (const [dx,dy,dz] of [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]) {
+    const o = at(b.p[0]+dx, b.p[1]+dy, b.p[2]+dz);
+    if (!o || !OC_NODE.has(o.k)) continue;
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(dx ? .5 : .26, dy ? .5 : .26, dz ? .5 : .26), cableMat);
+    arm.position.set(dx*.25, dy*.25, dz*.25); g.add(arm);
+  }
+  return g;
+}
+const OC_NODE = new Set(['adapter','cable','case','pc','screen','keyboard']);
+
+// ---------- раскладка ----------
+const STEPS = [
+  {t:'Ядро', d:'<p>Draconic Reactor Core — центр всей постройки. Вокруг нужно пустое пространство: ядро растёт с топливом и температурой (на 17 500 °C радиус ~3.3 блока).</p><p>Лучше строить в отдельном измерении: взрыв сносит ~200 блоков вместе с «взрывостойкими» блоками.</p>'},
+  {t:'Стабилизаторы ×4', d:'<p>Четыре Reactor Stabilizer на осях ядра, кольцом к ядру. Код ищет их до 10 блоков по прямой, но ядро не должно до них дорасти; на вики советуют 4–8.</p><p>Через GUI стабилизатора кладут топливо и смотрят состояние реактора.</p>'},
+  {t:'Инжектор', d:'<p>Reactor Energy Injector на свободной оси (здесь — под ядром), лицом к ядру. RF он принимает только с тыльной стороны.</p>'},
+  {t:'Вход: гейт и источник', d:'<p>Flux gate прямо за инжектором: <b style="color:#ffb27a">оранжевая</b> сторона (выход) — к инжектору, <b style="color:#c9a2ff">фиолетовая</b> (вход) — к источнику. Поворот — ключом GT.</p><p>Гейт ничего не тянет: источник должен сам толкать RF. DRC ставит гейт на override 2 147 483 647 RF/t.</p>'},
+  {t:'Выход: гейт и мусорка', d:'<p>Flux gate за одним стабилизатором: фиолетовая сторона к стабилизатору, оранжевая — к мусорке. Стабилизатор отдаёт RF только в блок за собой и только пока реактор работает.</p><p>Мусорка держит насыщение у 0% — отсюда ~14 000 °C и ~12 осколков в минуту.</p>'},
+  {t:'Топливо и осколки', d:'<p>Подача пробуждённого дракониума (транслокаторы) и вывод хаос-осколков (кондуит) — в любые стабилизаторы. При 12 осколках/мин это ~32 блока дракониума в секунду.</p><p>Если подача отстанет, конверсия поползёт вверх — DRC погасит реактор на 12%.</p>'},
+  {t:'Адаптеры ×3', d:'<p>Один адаптер касается стабилизатора (или инжектора) — это компонент <kbd>draconic_reactor</kbd>. Ещё по одному у каждого гейта — <kbd>flux_gate</kbd>.</p>'},
+  {t:'Кабель OC', d:'<p>Все адаптеры соединены кабелем с компьютером. Адаптеры могут касаться друг друга — сеть общая.</p>'},
+  {t:'Компьютер', d:'<p>Кейс T3 (APU T3, RAM T3.5, HDD, OpenOS), power converter, экран T3 5×2 и клавиатура.</p><p><kbd>wget</kbd> установщик → <kbd>drc-install</kbd>: он сам найдёт входной гейт, если в его GUI увеличить нижнюю уставку.</p>'},
+  {t:'Готово', d:'<p>Заправь реактор до 524 880 (100%) — max поле и насыщение фиксируются по топливу при зарядке. Дальше DRC сам: зарядка → запуск → работа.</p><p>Нажми «Запуск» ниже, чтобы посмотреть.</p>'},
+];
+function layout(d){
+  const B = [];
+  const add = (k, p, step, extra) => B.push(Object.assign({k, p, step}, extra || {}));
+  add('core', [0,0,0], 0, {label:'Ядро'});
+  add('stab', [d,0,0], 1, {f:'west', label:'Стабилизатор (выход RF)'});
+  add('stab', [-d,0,0], 1, {f:'east', label:'Стабилизатор'});
+  add('stab', [0,0,d], 1, {f:'north', label:'Стабилизатор'});
+  add('stab', [0,0,-d], 1, {f:'south', label:'Стабилизатор'});
+  add('inj', [0,-d,0], 2, {f:'up', label:'Инжектор'});
+  add('gate', [0,-d-1,0], 3, {out:'up', role:'in', label:'Flux gate: вход'});
+  add('source', [0,-d-2,0], 3, {label:'Источник RF ∞'});
+  add('gate', [d+1,0,0], 4, {out:'east', role:'out', label:'Flux gate: выход'});
+  add('trash', [d+2,0,0], 4, {label:'Мусорка (energy trash can)'});
+  add('marker', [0,0,-d-1], 5, {color:0xff9a3d, label:'Транслокатор: дракониум'});
+  add('marker', [-d-1,0,0], 5, {color:0x9b5cff, label:'Кондуит: осколки'});
+  add('adapter', [d,-1,0], 6, {label:'Адаптер → draconic_reactor'});
+  add('adapter', [d+1,-1,0], 6, {label:'Адаптер → гейт выхода'});
+  add('adapter', [1,-d-1,0], 6, {label:'Адаптер → гейт входа'});
+  for (let y = -2; y >= -d-1; y--) add('cable', [d+1,y,0], 7);
+  for (let x = 2; x <= d; x++) add('cable', [x,-d-1,0], 7);
+  add('pc', [d+1,-d-2,0], 8, {label:'Power converter'});
+  add('case', [d+2,-d-2,0], 8, {label:'Кейс T3'});
+  add('keyboard', [d+2,-d-1,0], 8, {label:'Клавиатура'});
+  const tiles = [['ftl','ftm','ftm','ftm','ftr'], ['fbl','fbm','fbm','fbm','fbr']];
+  for (let r = 0; r < 2; r++) for (let i = 0; i < 5; i++) add('screen', [d+3,-d-1-r,i-2], 8, {tile:tiles[r][i], label: r === 0 && i === 2 ? 'Экран T3 5×2' : null});
+  return B;
+}
+
+// ---------- физика (TileReactorCore, конфиг GTNH) ----------
+const FUEL_MAX = 524880, RATIO = FUEL_MAX/10368, USAGE = 3035, SHARD = 26244, IMAX = 2147483647;
+const toInt = x => Math.min(Math.floor(x), IMAX);
+const R = {};
+function resetReactor(){
+  Object.assign(R, {state:'OFFLINE', init:false, fuel:FUEL_MAX, conv:0, unit:0, temp:20, field:0, maxField:0, sat:0, maxSat:0,
+    gen:0, drain:0, rate:0, boom:false, shards:0, tick:0, rot:0, rotSpeed:0, hist:[]});
+  Object.assign(P, {alarm:null, hold:true, auto:true, start:false});
+}
+const P = {};
+const F = {fuel:true, shard:true, trash:true, src:1e30};
+const canStart = () => R.temp >= 2000 && R.field >= R.maxField/2 && R.sat >= R.maxSat/2;
+function runTick(){
+  const s = R.sat/R.maxSat, sI = (1-s)*99, t = R.temp/10000*50;
+  const c = (R.conv+R.unit)/(R.conv+R.fuel-R.unit)*1.3 - .3;
+  const rise = ((sI**3)/(100-sI) + 444.7 - ((t**4)/(100-t))*(1-c) + c*1000)/10000;
+  if (R.state === 'STOPPING') {
+    if (R.temp <= 2001) { R.state = 'OFFLINE'; R.init = false; return; }
+    if (R.sat >= R.maxSat*.99 && R.fuel > 0) R.temp -= 1-c; else R.temp += rise*10;
+  } else R.temp += rise*10;
+  const base = toInt(R.maxSat/1000*1.5), maxRF = toInt(base*(1+c*2));
+  R.gen = (1-s)*maxRF; R.sat = toInt(R.sat + R.gen);
+  const k = R.temp > 8000 ? 1 + ((R.temp-8000)**2)*2.5e-6 : R.temp > 2000 ? 1 : R.temp > 1000 ? (R.temp-1000)/1000 : 0;
+  R.k = k;
+  R.drain = toInt(k*(1-s)*(base/10.923556)); R.field -= R.drain;
+  R.rate = k*(1 - Math.max(s-.1, 0)**.3)*(.001*USAGE);
+  R.unit += R.rate;
+  if (R.unit >= 1 && R.fuel > 0) { const n = Math.floor(R.unit); R.fuel -= n; R.conv += n; R.unit -= n; }
+  if (R.field <= 0) R.boom = true;
+}
+function inject(e){
+  if (R.state === 'STARTING') {
+    if (!R.init) return;
+    if (R.field < R.maxField/2) R.field = Math.min(R.maxField/2, R.field + e);
+    else if (R.sat < R.maxSat/2) R.sat = Math.min(toInt(R.maxSat/2), R.sat + e);
+    else if (R.temp < 2000) R.temp = Math.min(2000, R.temp + e/(1000 + R.fuel/RATIO*10));
+  } else if (R.state === 'ONLINE' || R.state === 'STOPPING') {
+    R.field = Math.min(R.maxField, R.field + e*(1 - R.field/R.maxField));
+  }
+}
+function worldTick(){
+  if (R.boom) return;
+  R.tick++;
+  if (R.state === 'OFFLINE') { if (R.temp > 20) R.temp -= .5; R.field = Math.max(0, R.field - R.maxField*.0005); R.sat = toInt(Math.max(0, R.sat - R.maxSat*1e-6)); }
+  else if (R.state === 'STARTING') {
+    if (!R.init) { const tot = R.fuel+R.conv; R.maxField = tot/RATIO*96.45061728395062*100; R.maxSat = toInt(tot/RATIO*96.45061728395062*1000); R.init = true; }
+  } else runTick();
+  inject(Math.min(F.src, IMAX));
+  if (R.state === 'ONLINE' && F.trash) R.sat -= Math.min(R.sat, toInt(R.maxSat/100));
+  if (F.shard && R.conv > SHARD) { const n = Math.floor(R.conv/SHARD); R.conv -= n*SHARD; R.shards += n; R.hist.push([R.tick, n]); }
+  if (F.fuel && R.fuel + R.conv < FUEL_MAX) R.fuel = Math.min(FUEL_MAX - R.conv, R.fuel + 8*162);
+  R.rotSpeed = Math.min((R.temp-20)/2000, 1); R.rot += R.rotSpeed;
+  if (R.tick % 4 === 0) program();
+}
+// упрощённый DRC: те же пороги, что в drc.lua по умолчанию
+const LIM = {fieldStop:90, convStop:12, tempStop:17500};
+const pct = (a, b) => b > 0 ? a/b*100 : 0;
+function logMsg(m, cls){ const el = $('log'); const s = (R.tick/20).toFixed(0).padStart(5, ' ');
+  el.insertAdjacentHTML('afterbegin', `<div${cls ? ` style="color:var(--${cls})"` : ''}>${s} с · ${m}</div>`); }
+function program(){
+  const fp = pct(R.field, R.maxField), cp = pct(R.conv, R.conv+R.fuel);
+  if (R.state === 'ONLINE' && !P.alarm) {
+    let why = null;
+    if (fp < LIM.fieldStop) why = `поле ${fp.toFixed(1)}% < ${LIM.fieldStop}%`;
+    else if (cp >= LIM.convStop) why = `конверсия ${cp.toFixed(1)}% ≥ ${LIM.convStop}%`;
+    else if (R.temp >= LIM.tempStop) why = `температура ${Math.round(R.temp)} °C`;
+    if (why) { P.alarm = why; R.state = 'STOPPING'; logMsg('АВАРИЙНЫЙ СТОП: ' + why, 'bad'); }
+  }
+  if (R.state === 'OFFLINE' && !P.alarm && !P.hold && R.fuel + R.conv >= FUEL_MAX) { R.state = 'STARTING'; logMsg('chargeReactor: зарядка'); }
+  if (R.state === 'STARTING' && R.init && canStart() && !P.alarm && !P.hold) { R.state = 'ONLINE'; logMsg('activateReactor: запуск', 'ok'); }
+}
+resetReactor();
+
+// ---------- сцена ----------
+let D = 5, step = STEPS.length - 1, showAll = false, blocks = [], world = new THREE.Group(), coreG, coreMesh, shieldMesh, beams = [];
+scene.add(world);
+const coreMat = new THREE.MeshBasicMaterial({map:tex('reactorCore')});
+const shieldMat = new THREE.MeshBasicMaterial({map:tex('reactorShieldPlate'), transparent:true, depthWrite:false, opacity:0, blending:THREE.AdditiveBlending});
+const beamTex = tex('stabilizer_beam'); beamTex.wrapS = beamTex.wrapT = THREE.RepeatWrapping;
+const beamMat = new THREE.MeshBasicMaterial({map:beamTex, transparent:true, opacity:.0, depthWrite:false, blending:THREE.AdditiveBlending, side:THREE.DoubleSide});
+const ebTex = tex('reactorEnergyBeam'); ebTex.wrapS = ebTex.wrapT = THREE.RepeatWrapping;
+const ebMat = new THREE.MeshBasicMaterial({map:ebTex, transparent:true, opacity:0, depthWrite:false, blending:THREE.AdditiveBlending, side:THREE.DoubleSide, color:0xff9a50});
+let screenUI;
+function build(){
+  scene.remove(world); world = new THREE.Group(); scene.add(world);
+  const L = layout(D), map = new Map();
+  for (const b of L) map.set(b.p.join(','), b);
+  const at = (x, y, z) => map.get([x,y,z].join(','));
+  blocks = L; beams = [];
+  for (const b of L) {
+    let o;
+    if (b.k === 'core') {
+      o = coreG = new THREE.Group(); coreMesh = new THREE.Mesh(ICO, coreMat); shieldMesh = new THREE.Mesh(ICO, shieldMat);
+      coreG.add(coreMesh, shieldMesh);
+    } else if (b.k === 'stab') o = makeStabilizer(b.f);
+    else if (b.k === 'inj') o = makeInjector(b.f);
+    else if (b.k === 'cable') o = makeCable(b, at);
+    else o = makeBlock(b.k, b);
+    o.position.set(...b.p); b.obj = o; world.add(o);
+    if (b.k === 'stab' || b.k === 'inj') {
+      const len = D - .5, cyl = new THREE.Mesh(new THREE.CylinderGeometry(b.k === 'inj' ? .22 : .16, b.k === 'inj' ? .22 : .16, len, 10, 1, true), b.k === 'inj' ? ebMat : beamMat);
+      const dir = new THREE.Vector3(...b.p).normalize().negate();
+      cyl.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir);
+      cyl.position.copy(new THREE.Vector3(...b.p).multiplyScalar(.5 + .25/D));
+      cyl.userData.step = b.step; world.add(cyl); beams.push(cyl);
+    }
+  }
+  // интерфейс DRC на экране 5×2 (160×50 по центру, поля по бокам)
+  const img = new THREE.TextureLoader().load(SCREEN_IMG);
+  screenUI = new THREE.Mesh(new THREE.PlaneGeometry(1.7*1.6, 1.7), new THREE.MeshBasicMaterial({map:img}));
+  screenUI.position.set(D+3-.51, -D-1.5, 0); screenUI.rotation.y = -Math.PI/2; screenUI.userData.step = 8; world.add(screenUI);
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshLambertMaterial({color:0x151a24}));
+  floor.rotation.x = -Math.PI/2; floor.position.y = -D-2.5; world.add(floor);
+  const grid = new THREE.GridHelper(40, 40, 0x2a3348, 0x1d2433); grid.position.y = -D-2.49; world.add(grid);
+  buildLabels(); applyStep(); checks(); distNote();
+}
+function coreRadius(temp, fuel){ const vol = fuel/(1296*RATIO)*(1 + temp/10000*10); return Math.cbrt(vol/(4/3*Math.PI)); }
+
+// ---------- подписи ----------
+const labelsEl = $('labels');
+let labelMode = 'step';
+function buildLabels(){
+  labelsEl.innerHTML = '';
+  for (const b of blocks) if (b.label) { const el = document.createElement('div'); el.className = 'lbl'; el.textContent = b.label; labelsEl.appendChild(el); b.el = el; }
+}
+const tmpV = new THREE.Vector3();
+function placeLabels(){
+  const w = stage.clientWidth, h = stage.clientHeight;
+  for (const b of blocks) {
+    if (!b.el) continue;
+    const vis = b.step <= step && (labelMode === 'all' || b.step === step || (labelMode === 'step' && step === STEPS.length-1 && ['core','gate','source','trash','case'].includes(b.k)));
+    if (!vis) { b.el.style.display = 'none'; continue; }
+    tmpV.set(b.p[0], b.p[1] + (b.k === 'core' ? coreRadius(R.temp, R.fuel+R.conv)*.8 : .6), b.p[2]).project(camera);
+    if (tmpV.z > 1) { b.el.style.display = 'none'; continue; }
+    b.el.style.display = ''; b.el.className = 'lbl' + (b.step === step && step < STEPS.length-1 ? ' cur' : '');
+    b.el.style.left = ((tmpV.x+1)/2*w) + 'px'; b.el.style.top = ((1-tmpV.y)/2*h) + 'px';
+  }
+  // раздвинуть пересекающиеся подписи (снизу вверх)
+  const vis = blocks.filter(b => b.el && b.el.style.display !== 'none').map(b => ({el:b.el, x:parseFloat(b.el.style.left), y:parseFloat(b.el.style.top), w:b.el.offsetWidth, h:b.el.offsetHeight}));
+  vis.sort((a, b) => b.y - a.y);
+  const placed = [];
+  for (const v of vis) {
+    let moved = true, guard = 0;
+    while (moved && guard++ < 12) { moved = false;
+      for (const q of placed) if (Math.abs(v.x - q.x) < (v.w + q.w)/2 + 4 && Math.abs(v.y - q.y) < (v.h + q.h)/2 + 2) { v.y = q.y - (v.h + q.h)/2 - 3; moved = true; } }
+    v.el.style.top = v.y + 'px'; placed.push(v);
+  }
+}
+
+// ---------- шаги ----------
+function applyStep(){
+  for (const b of blocks) {
+    b.obj.visible = showAll || b.step <= step;
+  }
+  for (const c of beams) c.visible = c.userData.step <= step;
+  if (screenUI) screenUI.visible = step >= 8;
+  $('steps').innerHTML = STEPS.map((s, i) => `<li class="${i < step ? 'done' : ''}${i === step ? ' cur' : ''}" data-i="${i}"><b>${i+1}</b><span>${s.t}</span></li>`).join('');
+  $('stepNote').innerHTML = STEPS[step].d;
+}
+$('steps').addEventListener('click', e => { const li = e.target.closest('li'); if (li) { step = +li.dataset.i; showAll = false; applyStep(); focus(); } });
+$('prev').onclick = () => { step = Math.max(0, step-1); showAll = false; applyStep(); focus(); };
+$('next').onclick = () => { step = Math.min(STEPS.length-1, step+1); applyStep(); focus(); };
+$('all').onclick = () => { step = STEPS.length-1; applyStep(); focus(); };
+$('tags').onclick = () => { labelMode = labelMode === 'step' ? 'all' : labelMode === 'all' ? 'none' : 'step';
+  $('tags').textContent = 'Подписи: ' + {step:'шаг', all:'все', none:'нет'}[labelMode]; };
+const FOCUS = [[0,0,0],[0,0,0],[0,-2,0],[0,-4,0],[3,0,0],[0,0,0],[3,-3,0],[4,-4,0],[6,-5,0],[2,-2,0]];
+let camGoal = null;
+function focus(){
+  const f = FOCUS[step].map((v, i) => v*D/5);
+  const dist = step === 1 || step === 5 || step === 9 ? 3.4*D + 6 : 1.8*D + 6;
+  camGoal = {t:new THREE.Vector3(...f), p:new THREE.Vector3(f[0] - dist*.55, f[1] + dist*.55, f[2] + dist*.85)};
+  if (step === 8) camGoal.p.set(f[0] - 9, f[1] + 3, f[2] + 3);
+}
+
+// ---------- проверка схемы (по смежности блоков) ----------
+function checks(){
+  const map = new Map(blocks.map(b => [b.p.join(','), b]));
+  const at = p => map.get(p.join(','));
+  const nb = p => [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]].map(d => at([p[0]+d[0], p[1]+d[1], p[2]+d[2]])).filter(Boolean);
+  const back = b => { const a = AX[b.f]; return at([b.p[0]-a[0], b.p[1]-a[1], b.p[2]-a[2]]); };
+  const stabs = blocks.filter(b => b.k === 'stab'), inj = blocks.find(b => b.k === 'inj');
+  const faceCore = b => { const a = AX[b.f]; const n = Math.abs(b.p[0]) + Math.abs(b.p[1]) + Math.abs(b.p[2]);
+    return a[0] === -Math.sign(b.p[0]) && a[1] === -Math.sign(b.p[1]) && a[2] === -Math.sign(b.p[2]) && n === Math.max(...b.p.map(Math.abs)); };
+  const rMax = coreRadius(LIM.tempStop, FUEL_MAX) + .5, rNow = coreRadius(R.temp, R.fuel + R.conv) + .5;
+  const gIn = blocks.find(b => b.role === 'in'), gOut = blocks.find(b => b.role === 'out');
+  const outOf = g => { const a = AX[g.out]; return at([g.p[0]+a[0], g.p[1]+a[1], g.p[2]+a[2]]); };
+  const inOf = g => { const a = AX[g.out]; return at([g.p[0]-a[0], g.p[1]-a[1], g.p[2]-a[2]]); };
+  const adapters = blocks.filter(b => b.k === 'adapter');
+  // сеть OC: BFS от кейса
+  const cs = blocks.find(b => b.k === 'case'); const seen = new Set([cs]); const q = [cs];
+  while (q.length) { const c = q.shift(); for (const n of nb(c.p)) if (OC_NODE.has(n.k) && !seen.has(n)) { seen.add(n); q.push(n); } }
+  const L = [
+    [stabs.length === 4 && stabs.every(faceCore), '4 стабилизатора на осях ядра, смотрят на ядро'],
+    [D <= 10, `Стабилизаторы и инжектор не дальше 10 блоков (сейчас ${D})`],
+    [D > rMax, `Ядро не дорастает до стабилизаторов: r(17 500 °C) + 0.5 = ${rMax.toFixed(2)} < ${D}`],
+    [D > rNow, `Сейчас: r(${Math.round(R.temp)} °C) + 0.5 = ${rNow.toFixed(2)} < ${D}`],
+    [inj && faceCore(inj) && !stabs.some(s => s.p.every((v, i) => Math.sign(v) === Math.sign(inj.p[i]))), 'Инжектор на свободной оси, смотрит на ядро'],
+    [back(inj) === gIn && outOf(gIn) === inj, 'Входной гейт за инжектором, оранжевой стороной к нему'],
+    [inOf(gIn) && inOf(gIn).k === 'source', 'Источник у фиолетовой стороны входного гейта'],
+    [stabs.some(s => back(s) === gOut) && stabs.includes(inOf(gOut)), 'Выходной гейт за стабилизатором, фиолетовой стороной к нему'],
+    [outOf(gOut) && outOf(gOut).k === 'trash', 'Мусорка у оранжевой стороны выходного гейта'],
+    [adapters.some(a => nb(a.p).some(n => n.k === 'stab' || n.k === 'inj')), 'Адаптер касается стабилизатора → draconic_reactor'],
+    [[gIn, gOut].every(g => adapters.some(a => nb(a.p).includes(g))), 'Адаптер у каждого гейта → flux_gate ×2'],
+    [adapters.every(a => seen.has(a)), 'Все адаптеры в одной сети OC с кейсом'],
+    [blocks.filter(b => b.k === 'screen').every(s => seen.has(s)) && seen.has(blocks.find(b => b.k === 'keyboard')), 'Экран 5×2 и клавиатура подключены к кейсу'],
+  ];
+  $('checks').innerHTML = L.map(([ok, t]) => `<li><span class="${ok ? 'y' : 'n'}">${ok ? '✔' : '✘'}</span><span>${t}</span></li>`).join('');
+}
+function distNote(){
+  const r = coreRadius(LIM.tempStop, FUEL_MAX) + .5;
+  $('distNote').textContent = `Сейчас ${D} блоков. Ядро на 100% топлива: r = ${coreRadius(2000, FUEL_MAX).toFixed(2)} при 2000 °C, ${coreRadius(14000, FUEL_MAX).toFixed(2)} при 14 000 °C, ${(r-.5).toFixed(2)} при 17 500 °C. ` +
+    (D > r ? 'Запас есть.' : 'Стабилизаторы окажутся внутри ядра — структура станет неверной!');
+}
+$('dist').oninput = e => { D = +e.target.value; build(); focus(); };
+
+// ---------- управление ----------
+$('bStart').onclick = () => { if (P.alarm) { logMsg('сначала «Сброс аварии»', 'warn'); return; } if (R.boom) return; P.hold = false; logMsg('ЗАПУСК'); };
+$('bStop').onclick = () => { P.hold = true; if (R.state !== 'OFFLINE') { R.state = 'STOPPING'; logMsg('СТОП: stopReactor', 'warn'); } };
+$('bReset').onclick = () => { if (P.alarm) { logMsg('авария сброшена'); P.alarm = null; } };
+let SPEED = 10;
+document.querySelectorAll('[data-sp]').forEach(b => b.onclick = () => { SPEED = +b.dataset.sp; document.querySelectorAll('[data-sp]').forEach(x => x.classList.toggle('on', x === b)); });
+document.querySelectorAll('[data-src]').forEach(b => b.onclick = () => { F.src = +b.dataset.src; document.querySelectorAll('[data-src]').forEach(x => x.classList.toggle('on', x === b));
+  logMsg('источник: ' + (F.src > 1e20 ? '∞' : (F.src/1e6) + ' млн RF/t'), F.src < 1e9 ? 'warn' : null); });
+for (const [id, key, name] of [['fFuel','fuel','подача топлива'],['fShard','shard','вывод осколков'],['fTrash','trash','мусорка']])
+  $(id).onclick = () => { F[key] = !F[key]; $(id).classList.toggle('on', F[key]); logMsg(name + (F[key] ? ': вкл' : ': ВЫКЛ'), F[key] ? null : 'warn'); };
+$('boomReset').onclick = () => { resetReactor(); $('boom').classList.remove('on'); $('log').innerHTML = ''; logMsg('реактор собран заново'); };
+
+// ---------- цикл ----------
+const STRU = {OFFLINE:'ВЫКЛЮЧЕН', STARTING:'ЗАРЯДКА', ONLINE:'РАБОТАЕТ', STOPPING:'ОСТАНОВКА'};
+function fmt(n){ return Math.round(n).toLocaleString('ru-RU'); }
+function ui(){
+  const fp = Math.max(0, pct(R.field, R.maxField)), sp = pct(R.sat, R.maxSat), cp = pct(R.conv + R.unit, R.conv + R.fuel);
+  $('vT').textContent = fmt(R.temp) + ' °C'; $('bT').style.width = Math.min(100, R.temp/200) + '%';
+  $('bT').style.background = R.temp > 16000 ? 'var(--bad)' : R.temp > 8000 ? '#ff5a2a' : R.temp > 2000 ? '#ffaa33' : '#3fa8ff';
+  $('vF').textContent = fp.toFixed(1) + '%'; $('bF').style.width = fp + '%';
+  $('vS').textContent = sp.toFixed(1) + '%'; $('bS').style.width = sp + '%';
+  $('vC').textContent = cp.toFixed(2) + '%'; $('bC').style.width = Math.min(100, cp*4) + '%';
+  while (R.hist.length && R.hist[0][0] < R.tick - 1200) R.hist.shift();
+  $('vR').textContent = (R.state === 'ONLINE' ? (R.rate*1200/SHARD) : 0).toFixed(1);
+  $('vN').textContent = fmt(R.shards);
+  const chip = $('chip'); chip.textContent = STRU[R.state] + (R.state === 'STARTING' && canStart() ? ' ✓' : '');
+  chip.style.background = R.state === 'ONLINE' ? '#1f6b3d' : R.state === 'STOPPING' ? '#7a5a12' : R.state === 'STARTING' ? '#1e4a7a' : '#26314a';
+  $('stText').textContent = P.alarm ? 'Авария: ' + P.alarm : P.hold && R.state === 'OFFLINE' ? 'нажми «Запуск»' :
+    R.state === 'STOPPING' ? (sp < 99 ? 'набор насыщения до 99%' : 'остывание до 2000 °C') : `k = ${(R.k || 0).toFixed(1)}, поле −${(R.drain/1e6).toFixed(2)} млн RF/t`;
+}
+function visuals(){
+  const fuel = R.fuel + R.conv, r = coreRadius(R.temp, fuel);
+  coreG.scale.setScalar(Math.max(.05, r));
+  const ang = R.rot*.2*Math.PI/180;
+  coreMesh.quaternion.setFromAxisAngle(new THREE.Vector3(.5, 1, .5).normalize(), ang);
+  shieldMesh.scale.setScalar(1.03);
+  shieldMesh.quaternion.setFromAxisAngle(new THREE.Vector3(.5, 1, .5).normalize(), (2343 - R.rot*.4)*Math.PI/180);
+  const fp = R.maxField > 0 ? R.field/R.maxField : 0;
+  shieldMat.color.setRGB(fp < .5 ? 1 - fp*2 : 0, fp > .5 ? (fp - .5)*2 : 0, Math.min(1, fp*2));
+  shieldMat.opacity = (fp < .1 ? fp*10 : 1)*.45;
+  const heat = Math.min(1, Math.max(0, (R.temp - 20)/14000));
+  coreMat.color.setRGB(.55 + .45*heat, .45 + .45*heat, .45 + .4*heat);
+  coreLight.intensity = heat*2.2; coreLight.distance = 10 + r*6;
+  const act = R.state !== 'OFFLINE' ? Math.min(1, fp/.1) : 0;
+  beamMat.opacity = .75*act; beamTex.offset.y -= .02*act;
+  ebMat.opacity = (R.state === 'STARTING' || R.state === 'ONLINE' || R.state === 'STOPPING') && F.src > 0 ? .8 : 0; ebTex.offset.y -= .05;
+  for (const b of blocks) if (b.k === 'stab') { const a = b.obj.userData.anim, sp = act*(R.state === 'ONLINE' ? 1 : .4);
+    a.gA.rotation.z += .04*sp; a.gB.rotation.z -= .04*sp; a.r3.rotation.y += .02*sp; }
+  if (R.boom && !$('boom').classList.contains('on')) { $('boom').classList.add('on'); logMsg('ВЗРЫВ: поле = 0', 'bad'); }
+}
+function resize(){ const w = stage.clientWidth, h = stage.clientHeight; renderer.setSize(w, h, false); camera.aspect = w/h; camera.updateProjectionMatrix(); }
+const ro = new ResizeObserver(resize); ro.observe(stage);
+let last = performance.now(), acc = 0, lastChecks = 0;
+function frame(now){
+  const dt = Math.min(.1, (now - last)/1000); last = now;
+  acc += dt*20*SPEED;
+  let n = 0; while (acc >= 1 && n < 8000) { worldTick(); acc -= 1; n++; }
+  if (n >= 8000) acc = 0;
+  visuals(); ui();
+  if (now - lastChecks > 1000) { checks(); lastChecks = now; }
+  if (camGoal) { camera.position.lerp(camGoal.p, .08); controls.target.lerp(camGoal.t, .08); if (camera.position.distanceTo(camGoal.p) < .05) camGoal = null; }
+  controls.update(); renderer.render(scene, camera); placeLabels();
+  requestAnimationFrame(frame);
+}
+controls.addEventListener('start', () => { camGoal = null; });
+build();
+camera.position.set(-14, 10, 18); controls.target.set(1, -2, 0);
+resize(); focus();
+logMsg('топливо 524 880 (100%), источник ∞ — нажми «Запуск»');
+window.drcDebug = {camera, controls, R, F, P, setGoal:(p,t)=>{camGoal={p:new THREE.Vector3(...p),t:new THREE.Vector3(...t)};}};
+requestAnimationFrame(frame);
+}
+</script>
+</body>
+</html>
